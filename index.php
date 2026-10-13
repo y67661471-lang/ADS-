@@ -1,97 +1,82 @@
 <?php
-$pageTitle = "FRG TOUR BD";
-require_once 'includes/functions.php';
-require_once 'includes/header.php';
+require_once '../config/db.php';
 
-// Fetch Banners
-$banners = [];
-try {
-    $stmt = $pdo->query("SELECT * FROM banners ORDER BY id DESC");
-    $banners = $stmt->fetchAll();
-} catch (PDOException $e) {
-    // Handle error
+// TEMP DEBUGGING
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+session_start();
+
+if (isset($_SESSION['admin_id'])) {
+    header("Location: dashboard.php");
+    exit;
 }
 
-// Fetch Categories
-$categories = [];
-try {
-    $stmt = $pdo->query("SELECT * FROM categories ORDER BY id ASC");
-    $categories = $stmt->fetchAll();
-} catch (PDOException $e) {
-    // Handle error
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email']);
+    $password = $_POST['password'];
+
+    // Verify Admin
+    $stmt = $pdo->prepare("SELECT * FROM admins WHERE email = ?");
+    $stmt->execute([$email]);
+    $admin = $stmt->fetch();
+
+    if ($admin && password_verify($password, $admin['password'])) {
+        $_SESSION['admin_id'] = $admin['id'];
+        $_SESSION['admin_name'] = $admin['name'];
+        $_SESSION['admin_role_id'] = $admin['role_id'];
+
+        header("Location: dashboard.php");
+        exit;
+    } else {
+        // Fallback for PIN (Legacy Support during transition)
+        // If the user entered a PIN in the password field and email is empty (or we add a separate check)
+        // But for now, we strictly move to Email/Pass as requested.
+        $error = "Invalid Email or Password";
+    }
 }
 ?>
+<!DOCTYPE html>
+<html lang="en">
 
-<section id="home" class="app-section active">
-    <!-- HERO BANNER -->
-    <div class="hero-banner">
-        <div class="alert-box">
-            <marquee id="dynamic-notice">
-                <?php echo htmlspecialchars(getSetting('notice_board') ?: 'Welcome to RRR Esports! Play daily matches and earn rewards.'); ?>
-            </marquee>
-        </div>
-        <div class="slider-container">
-            <div id="banner-slider-wrapper" class="slider-wrapper">
-                <?php if (!empty($banners)): ?>
-                    <?php foreach ($banners as $banner): ?>
-                        <div class="slide" onclick="window.open('<?php echo htmlspecialchars($banner['link']); ?>', '_blank')">
-                            <img src="<?php echo htmlspecialchars($banner['image_url']); ?>" alt="Banner">
-                            <?php if ($banner['title']): ?>
-                                <div class="slide-caption">
-                                    <?php echo htmlspecialchars($banner['title']); ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <div class="slide">
-                        <img src="https://placehold.co/600x200?text=Welcome+to+RRR+Esports" alt="Default Banner">
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Login</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/css/admin.css">
+</head>
 
-    <div class="section-title">Select Game Category</div>
+<body>
+    <div class="pin-screen">
+        <i class="fas fa-shield-alt" style="font-size: 50px; color: var(--primary); margin-bottom: 20px;"></i>
+        <h2>RRR Admin</h2>
+        <p style="color: #666; font-size: 14px; margin-bottom:20px;">Staff Access</p>
 
-    <div class="category-list">
-        <?php if (!empty($categories)): ?>
-            <?php foreach ($categories as $cat): ?>
-                <?php
-                // Use thumbnail if available, else fallback to icon
-                $bgUrl = !empty($cat['thumbnail_url']) ? $cat['thumbnail_url'] : $cat['icon_url'];
-                // Use custom link if available, else default match link
-                // Check if link is absolute (http) or relative
-                $clickAction = "window.location.href='matches.php?cat_id=" . $cat['id'] . "'";
-                if (!empty($cat['link'])) {
-                    // if explicitly external, maybe window.open? user didn't specify, assume same tab for now unless http
-                    $clickAction = "window.location.href='" . htmlspecialchars($cat['link']) . "'";
-                }
-                ?>
-                <div class="game-card" onclick="<?php echo $clickAction; ?>">
-                    <div class="game-card-bg" style="background-image: url('<?php echo htmlspecialchars($bgUrl); ?>');"></div>
-                    <div class="game-card-content">
-                        <img src="<?php echo htmlspecialchars($cat['icon_url']); ?>" class="game-avatar">
-                        <div class="game-info">
-                            <div class="game-title">
-                                <?php echo htmlspecialchars($cat['title']); ?>
-                            </div>
-                            <!-- Counts could be dynamic, for now placeholder or query separately -->
-                            <div class="match-count">Tap to View Matches</div>
-                        </div>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <div style="text-align:center; width:100%; padding:20px; color:#999;">No Categories Found</div>
+        <?php if ($error): ?>
+            <p style="background:rgba(255,0,0,0.1); color: #ff4444; padding:10px; border-radius:4px; font-size:14px;">
+                <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+            </p>
         <?php endif; ?>
+
+        <form method="POST">
+            <div style="margin-bottom:15px; text-align:left;">
+                <label style="font-size:12px; font-weight:600; color:#555;">EMAIL</label>
+                <input type="email" name="email" class="pin-input" placeholder="admin@example.com"
+                    style="width:100%; text-align:left; padding:10px; font-size:14px;" required autofocus>
+            </div>
+            <div style="margin-bottom:20px; text-align:left;">
+                <label style="font-size:12px; font-weight:600; color:#555;">PASSWORD</label>
+                <input type="password" name="password" class="pin-input" placeholder="••••••"
+                    style="width:100%; text-align:left; padding:10px; font-size:14px;" required>
+            </div>
+
+            <button type="submit" class="action-btn btn-orange" style="width:100%; padding:12px; font-size:16px;">SECURE
+                LOGIN <i class="fas fa-arrow-right"></i></button>
+        </form>
     </div>
-</section>
+</body>
 
-<section class="app-download-section" style="text-align:center; padding: 20px; margin-top:20px; margin-bottom: 80px;">
-    <a href="app/FRG TOUR BD.apk" style="display:inline-block; text-decoration:none;" download>
-        <img src="assets/img/google_play_download.png" alt="Download App" style="height: 80px; width: auto;">
-    </a>
-</section>
-
-<?php require_once 'includes/footer.php'; ?>
+</html>

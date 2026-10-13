@@ -1,105 +1,112 @@
 <?php
-$pageTitle = "Participants - RRR Esports";
-require_once 'includes/functions.php';
+require_once '../config/db.php';
 require_once 'includes/header.php';
 
-$match_id = $_GET['id'] ?? null;
-
-if (!$match_id) {
-    echo "<div class='app-section active'><p style='padding:20px; text-align:center;'>Invalid Match ID.</p></div>";
+if (!hasPermission('tournaments')) {
+    echo "<div class='panel'>Access Denied</div>";
     require_once 'includes/footer.php';
     exit;
+}
+
+$mid = $_GET['mid'] ?? null;
+if (!$mid) {
+    echo "<div class='panel'>Invalid Match ID</div>";
+    require_once 'includes/footer.php';
+    exit;
+}
+
+// Handle Remove
+if (isset($_POST['remove_pid'])) {
+    $pid = $_POST['remove_pid'];
+    // Logic to remove participant:
+    // 1. Get match_id from participant
+    // 2. Delete row
+    // 3. Decrement joined_slots in matches
+    // 4. Refund? (Optional, skipping for simple fix unless requested)
+
+    $stmt = $pdo->prepare("DELETE FROM participants WHERE id = ?");
+    $stmt->execute([$pid]);
+
+    $pdo->prepare("UPDATE matches SET joined_slots = joined_slots - 1 WHERE id = ?")->execute([$mid]);
+
+    echo "<div style='background:#d4edda; padding:10px; margin-bottom:10px; color:#155724;'>Participant removed.</div>";
 }
 
 // Fetch Match Info
-$stmt = $pdo->prepare("SELECT * FROM matches WHERE id = ?");
-$stmt->execute([$match_id]);
+$stmt = $pdo->prepare("SELECT title, total_slots, joined_slots FROM matches WHERE id = ?");
+$stmt->execute([$mid]);
 $match = $stmt->fetch();
 
-if (!$match) {
-    echo "<div class='app-section active'><p style='padding:20px; text-align:center;'>Match not found.</p></div>";
-    require_once 'includes/footer.php';
-    exit;
-}
-
 // Fetch Participants
-$stmt = $pdo->prepare("SELECT p.*, u.name as user_name 
+// user_id might be 0 if guest? Assuming linked to users table
+$stmt = $pdo->prepare("SELECT p.*, u.name as user_name, u.email 
                        FROM participants p 
                        JOIN users u ON p.user_id = u.id 
                        WHERE p.match_id = ? 
-                       ORDER BY p.id ASC");
-$stmt->execute([$match_id]);
+                       ORDER BY p.id DESC");
+$stmt->execute([$mid]);
 $players = $stmt->fetchAll();
-
-$joinedCount = count($players);
-$totalSlots = $match['total_slots'];
 
 ?>
 
-<section class="app-section active">
-    <!-- Back Button -->
-    <div class="back-nav" onclick="window.location.href='matches.php?cat_id=<?php echo $match['category_id']; ?>'">
-        <i class="fas fa-arrow-left"></i> Back to Matches
+<div class="header-bar">
+    <h2 class="page-title">Participants:
+        <?php echo htmlspecialchars($match['title']); ?>
+    </h2>
+    <a href="tournaments.php" class="action-btn btn-dark">Back</a>
+</div>
+
+<div class="panel">
+    <p><strong>Slots:</strong>
+        <?php echo $match['joined_slots']; ?> /
+        <?php echo $match['total_slots']; ?>
+    </p>
+
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>User (App Account)</th>
+                    <th>In-Game Data</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($players)): ?>
+                    <tr>
+                        <td colspan="4" style="text-align:center;">No participants yet.</td>
+                    </tr>
+                <?php else: ?>
+                    <?php foreach ($players as $k => $p): ?>
+                        <tr>
+                            <td>
+                                <?php echo $k + 1; ?>
+                            </td>
+                            <td>
+                                <strong>
+                                    <?php echo htmlspecialchars($p['user_name']); ?>
+                                </strong><br>
+                                <small>
+                                    <?php echo htmlspecialchars($p['email']); ?>
+                                </small>
+                            </td>
+                            <td>
+                                <?php echo htmlspecialchars($p['game_username']); ?>
+                            </td>
+                            <td>
+                                <form method="POST"
+                                    onsubmit="return confirm('Remove this player? (Balance will NOT be automatically refunded)');">
+                                    <input type="hidden" name="remove_pid" value="<?php echo $p['id']; ?>">
+                                    <button class="action-btn btn-red" style="padding:5px 10px; font-size:12px;">Remove</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
     </div>
-
-    <div style="padding: 15px;">
-        <h2 style="margin-bottom: 5px; font-size: 18px;">
-            <?php echo htmlspecialchars($match['title']); ?>
-        </h2>
-        <p style="color: #888; font-size: 14px; margin-bottom: 15px;">
-            <?php echo date("d M, h:i A", strtotime($match['schedule_time'])); ?>
-        </p>
-
-        <div
-            style="background: var(--card-bg, #fff); border-radius: 10px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
-            <div
-                style="display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                <span style="font-weight: bold;">Participants (
-                    <?php echo $joinedCount; ?>/
-                    <?php echo $totalSlots; ?>)
-                </span>
-                <span style="color: <?php echo $joinedCount >= $totalSlots ? 'red' : 'green'; ?>">
-                    <?php echo $joinedCount >= $totalSlots ? 'Full' : 'Open'; ?>
-                </span>
-            </div>
-
-            <?php if (empty($players)): ?>
-                <div style="text-align: center; padding: 20px; color: #999;">
-                    No participants yet. Be the first to join!
-                </div>
-            <?php else: ?>
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                        <thead>
-                            <tr style="text-align: left; color: #666; font-size: 12px; border-bottom: 1px solid #ddd;">
-                                <th style="padding: 8px;">#</th>
-                                <th style="padding: 8px;">Player Name</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($players as $index => $player): ?>
-                                <tr style="border-bottom: 1px solid #f5f5f5;">
-                                    <td style="padding: 10px 8px; color: #888;">
-                                        <?php echo $index + 1; ?>
-                                    </td>
-                                    <td style="padding: 10px 8px;">
-                                        <div style="font-weight: 600;">
-                                            <?php echo htmlspecialchars($player['user_name']); ?>
-                                        </div>
-                                        <?php if (!empty($player['game_username'])): ?>
-                                            <div style="font-size: 11px; color: #999;">IGN:
-                                                <?php echo htmlspecialchars($player['game_username']); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-        </div>
-    </div>
-</section>
+</div>
 
 <?php require_once 'includes/footer.php'; ?>
